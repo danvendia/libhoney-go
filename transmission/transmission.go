@@ -30,9 +30,10 @@ import (
 )
 
 const (
-	apiMaxBatchSize    int = 5000000 // 5MB
-	apiEventSizeMax    int = 100000  // 100KB
-	maxOverflowBatches int = 10
+	apiMaxBatchSize          int = 5000000 // 5MB
+	apiEventSizeMax          int = 100000  // 100KB
+	maxOverflowBatches       int = 10
+	defaultHttpClientTimeout     = time.Second * 60
 )
 
 // Version is the build version, set by libhoney
@@ -73,7 +74,14 @@ type Honeycomb struct {
 	batchMaker func() muster.Batch
 	responses  chan Response
 
+	// Transport defines the behavior of the lower layer transport details. It is used as the Transport value
+	// for the constructed HTTP client that sends requests. If Transport is not defined http.DefaultTransport
+	// will be used
 	Transport http.RoundTripper
+
+	// HttpClientTimeout defines the overall end to end timeout for requests. It is used as the Timeout
+	// value for the constructed HTTP client that sends requests.
+	HttpClientTimeout time.Duration
 
 	muster     *muster.Client
 	musterLock sync.RWMutex
@@ -91,6 +99,9 @@ func (h *Honeycomb) Start() error {
 	if h.Metrics == nil {
 		h.Metrics = &nullMetrics{}
 	}
+	if h.HttpClientTimeout == 0 {
+		h.HttpClientTimeout = defaultHttpClientTimeout
+	}
 	if h.batchMaker == nil {
 		h.batchMaker = func() muster.Batch {
 			return &batchAgg{
@@ -98,7 +109,7 @@ func (h *Honeycomb) Start() error {
 				batches:           map[string][]*Event{},
 				httpClient: &http.Client{
 					Transport: h.Transport,
-					Timeout:   60 * time.Second,
+					Timeout:   h.HttpClientTimeout,
 				},
 				blockOnResponse:       h.BlockOnResponse,
 				responses:             h.responses,
